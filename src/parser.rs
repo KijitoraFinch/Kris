@@ -124,50 +124,57 @@ impl<L: LexerLike> Parser<L> {
 
     fn parse_let_statement(&mut self) -> Statement {
         self.consume(Token::Let);
-        let name = self.parse_expression_with_bp(0);
-        match name {
-            Expression::Ident(ident) => {
-                self.consume(Token::Assign);
-                let value = self.parse_expression();
-                self.consume(Token::Semicolon);
-                Statement::LetStmt {
-                    name: ident.repr,
-                    value,
-                }
-            }
-            _ => panic!("expected identifier, got: {:?}", name),
-        }
+        let name = match self.cur_token {
+            Token::Symbol(ref s) => s.clone(),
+            _ => panic!("expected identifier, got: {:?}", self.cur_token),
+        };
+        self.next_token();
+        self.consume(Token::Assign);
+        let value = self.parse_expression();
+        self.consume(Token::Semicolon);
+        Statement::LetStmt { name, value }
     }
 
     fn parse_return_statement(&mut self) -> Statement {
         self.consume(Token::Return);
         let value = self.parse_expression();
+        let stmt = Statement::ReturnStmt(value);
         self.consume(Token::Semicolon);
-        Statement::ReturnStmt(value)
+        stmt
     }
 
     fn parse_expression_statement(&mut self) -> Statement {
-        let expr = self.parse_expression();
+        let expr = match self.cur_token {
+            Token::Symbol(_) | Token::Integer(_) | Token::StrLit(_) => self.parse_expression(),
+            _ => panic!(
+                "unexpected token in expression statement: {:?}",
+                self.cur_token
+            ),
+        };
         let stmt = Statement::ExpressionStmt(expr);
         self.consume(Token::Semicolon);
         stmt
     }
 
     fn parse_identifier(&mut self) -> Expression {
-        match self.cur_token {
+        let expr = match self.cur_token {
             Token::Symbol(ref s) => {
                 let ident = Ident { repr: s.clone() };
                 Expression::Ident(ident)
             }
             _ => panic!("expected identifier, got: {:?}", self.cur_token),
-        }
+        };
+        self.next_token();
+        expr
     }
 
     fn parse_integer_literal(&mut self) -> Expression {
-        match self.cur_token {
+        let expr = match self.cur_token {
             Token::Integer(i) => Expression::Literal(Literal::Int(i)),
             _ => panic!("expected integer literal, got: {:?}", self.cur_token),
-        }
+        };
+        self.next_token();
+        expr
     }
 }
 
