@@ -3,8 +3,9 @@ use crate::ast::{Expression, Ident, Literal, Statement};
 use crate::lexer::Lexer;
 use crate::prattutil::{OperatorLookup, OperatorMetadata, OperatorTable};
 use crate::token::Token;
+use std::fmt::Debug;
 
-pub trait LexerLike {
+pub trait LexerLike: Debug + Clone {
     fn next_token(&mut self) -> Token;
 }
 
@@ -14,6 +15,7 @@ pub struct Parser<L: LexerLike> {
     cur_token: Token,
     peek_token: Token,
     operator_table: OperatorTable,
+    level: u8,
 }
 
 impl<L: LexerLike> Parser<L> {
@@ -23,6 +25,7 @@ impl<L: LexerLike> Parser<L> {
             cur_token: Token::EOF,
             peek_token: Token::EOF,
             operator_table: OperatorTable::new(),
+            level: 0,
         };
         p.next_token();
         p.next_token();
@@ -65,6 +68,9 @@ impl<L: LexerLike> Parser<L> {
     }
 
     fn parse_expression_with_bp(&mut self, bp: u8) -> Expression {
+        if cfg!(debug_assertions) {
+            dbg!(&self);
+        }
         let op_meta = self.operator_table.get_prefix(&self.cur_token);
         //TODO: refactor this shit
         let epilogue = match op_meta.clone() {
@@ -73,45 +79,36 @@ impl<L: LexerLike> Parser<L> {
         };
         let mut lhs = match op_meta {
             Some(op) => {
+                let op_repr = self.cur_token.to_string();
                 self.next_token();
                 let expr = self.parse_expression_with_bp(op.rbp);
                 Expression::Prefix {
-                    operator: self.cur_token.to_string(),
+                    operator: op_repr,
                     right: Box::new(expr),
                 }
             }
             None => match self.cur_token {
-                // if no operator is found, we parse the token as an atomic expression
-                Token::Symbol(_) => self.parse_identifier(),
                 Token::Integer(_) => self.parse_integer_literal(),
-                Token::StrLit(_) => {
-                    let s = self.cur_token.to_string();
-                    self.next_token();
-                    Expression::Literal(Literal::StrLit(s))
-                }
-                _ => {
-                    panic!("unexpected token: {:?}", self.cur_token);
-                }
+                Token::Symbol(_) => self.parse_identifier(),
+                Token::StrLit(_) => self.parse_string_literal(),
+                _ => panic!("unexpected token: {:?}", self.cur_token),
             },
         };
-
+        if cfg!(debug_assertions) {
+            dbg!(&lhs);
+            dbg!(&self.cur_token);
+        }
         // parse and combine following expressions
-        while let Some(op) = self.operator_table.get_infix(&self.peek_token) {
+        while let Some(op) = self.operator_table.get_infix(&self.cur_token) {
             if op.lbp <= bp {
                 break;
             }
+            let op_repr = self.cur_token.to_string();
             self.next_token();
-            lhs = match lhs {
-                Expression::Ident(_) | Expression::Literal(_) => {
-                    let left = Box::new(lhs);
-                    let right = Box::new(self.parse_expression_with_bp(op.rbp));
-                    Expression::Infix {
-                        left,
-                        operator: self.cur_token.to_string(),
-                        right,
-                    }
-                }
-                _ => panic!("unexpected expression: {:?}", lhs),
+            lhs = Expression::Infix {
+                left: Box::new(lhs),
+                operator: op_repr,
+                right: Box::new(self.parse_expression_with_bp(op.rbp)),
             };
         }
 
@@ -144,16 +141,9 @@ impl<L: LexerLike> Parser<L> {
     }
 
     fn parse_expression_statement(&mut self) -> Statement {
-        let expr = match self.cur_token {
-            Token::Symbol(_) | Token::Integer(_) | Token::StrLit(_) => self.parse_expression(),
-            _ => panic!(
-                "unexpected token in expression statement: {:?}",
-                self.cur_token
-            ),
-        };
-        let stmt = Statement::ExpressionStmt(expr);
+        let expr = self.parse_expression();
         self.consume(Token::Semicolon);
-        stmt
+        Statement::ExpressionStmt(expr)
     }
 
     fn parse_identifier(&mut self) -> Expression {
@@ -172,6 +162,15 @@ impl<L: LexerLike> Parser<L> {
         let expr = match self.cur_token {
             Token::Integer(i) => Expression::Literal(Literal::Int(i)),
             _ => panic!("expected integer literal, got: {:?}", self.cur_token),
+        };
+        self.next_token();
+        expr
+    }
+
+    fn parse_string_literal(&mut self) -> Expression {
+        let expr = match self.cur_token {
+            Token::StrLit(ref s) => Expression::Literal(Literal::StrLit(s.clone())),
+            _ => panic!("expected string literal, got: {:?}", self.cur_token),
         };
         self.next_token();
         expr
@@ -241,6 +240,41 @@ mod tests {
                 Expression::Ident(ident) => assert_eq!(ident.repr, "foobar"),
                 _ => panic!("Expected identifier"),
             },
+            _ => panic!("Expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn test_complicated_expression_1() {
+        let input = "5 + 3 * 10;";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse_program();
+
+        // With proper operator precedence, "5 + 3 * 10" should be parsed as "5 + (3 * 10)"
+        // because "*" has higher precedence than "+"
+        let expected_expr = Expression::Infix {
+            left: Box::new(Expression::Literal(Literal::Int(5))),
+            operator: "+".to_string(),
+            right: Box::new(Expression::Infix {
+                left: Box::new(Expression::Literal(Literal::Int(3))),
+                operator: "*".to_string(),
+                right: Box::new(Expression::Literal(Literal::Int(10))),
+            }),
+        };
+
+        match &program.statements[0] {
+            Statement::ExpressionStmt(expr) => {
+                let expected_debug = format!("{:#?}", expected_expr);
+                let actual_debug = format!("{:#?}", expr);
+
+                if expected_debug != actual_debug {
+                    println!("Expected AST:\n{}", expected_debug);
+                    println!("Actual AST:\n{}", actual_debug);
+                    panic!("AST does not match expected structure");
+                }
+            }
             _ => panic!("Expected expression statement"),
         }
     }

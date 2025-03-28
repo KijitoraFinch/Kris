@@ -1,0 +1,44 @@
+{
+  // IntelliSense を使用して利用可能な属性を学べます。
+  // 既存の属性の説明をホバーして表示します。
+  // 詳細情報は次を確認してください: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'Kris'",
+      "cargo": {
+        "args": ["build", "--bin=Kris", "--package=Kris"],
+        "filter": {
+          "name": "Kris",
+          "kind": "bin"
+        }
+      },
+      "args": ["${input:source}"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'Kris'",
+      "cargo": {
+        "args": ["test", "--no-run", "--bin=Kris", "--package=Kris"],
+        "filter": {
+          "name": "Kris",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+
+  "inputs": [
+    {
+      "id": "source",
+      "type": "promptString",
+      "description": "Enter the source code to debug (e.g., 1 + 1)"
+    }
+  ]
+}
