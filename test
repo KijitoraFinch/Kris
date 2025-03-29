@@ -1,0 +1,10 @@
+function main () {let x = 1;
+let tmp = 1;
+while true {
+    tmp = tmp * x;
+    tmp = tmp + 1;
+    (function() {if ((x > 5)) {return x;}
+}
+}
+
+console.log(main());

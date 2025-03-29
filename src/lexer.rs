@@ -178,6 +178,17 @@ impl<'a> Lexer<'a> {
                 self.read_char();
                 Token::Semicolon
             }
+            ':' => match self.peek_char() {
+                '=' => {
+                    self.read_char();
+                    self.read_char();
+                    Token::Assign
+                }
+                _ => {
+                    self.read_char();
+                    Token::Colon
+                }
+            },
             '\0' => Token::EOF,
             ch if ch.is_alphabetic() || ch == '_' => {
                 let ident = self.read_identifier();

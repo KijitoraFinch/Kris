@@ -97,6 +97,11 @@ impl OperatorLookup for OperatorTable {
                 rbp: 2,
                 epilogue: None,
             }),
+            Token::Assign => Some(OperatorMetadata {
+                lbp: 1,
+                rbp: 2,
+                epilogue: None,
+            }),
             _ => None,
         }
     }

@@ -1,4 +1,5 @@
 mod ast;
+mod codegen;
 mod evaluator;
 mod lexer;
 mod parser;
@@ -17,5 +18,10 @@ fn main() {
     let mut lexer = lexer::Lexer::new(input);
     let mut parser = parser::Parser::new(lexer);
     let program = parser.parse_program();
-    println!("{:#?}", program);
+    let mut evaluator = evaluator::Evaluator::new();
+    let result = evaluator.eval(&program);
+    match result {
+        Ok(value) => println!("Result: {:?}", value),
+        Err(err) => eprintln!("Error: {}", err),
+    }
 }
