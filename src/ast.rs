@@ -22,11 +22,11 @@ pub enum Statement {
 pub enum Expression {
     Ident(Ident),
     Literal(Literal),
-    Prefix {
+    Unary {
         operator: String,
         right: Box<Expression>,
     },
-    Infix {
+    Binary {
         left: Box<Expression>,
         operator: String,
         right: Box<Expression>,

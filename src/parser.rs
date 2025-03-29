@@ -31,7 +31,8 @@ impl<L: LexerLike> Parser<L> {
         p.next_token();
         p
     }
-
+}
+impl<L: LexerLike> Parser<L> {
     fn next_token(&mut self) {
         self.cur_token = self.peek_token.clone();
         self.peek_token = self.lexer.next_token();
@@ -50,7 +51,6 @@ impl<L: LexerLike> Parser<L> {
         while self.cur_token != Token::EOF {
             let stmt = self.parse_statement();
             program.statements.push(stmt);
-            self.next_token();
         }
         program
     }
@@ -61,62 +61,6 @@ impl<L: LexerLike> Parser<L> {
             Token::Return => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
         }
-    }
-
-    fn parse_expression(&mut self) -> Expression {
-        self.parse_expression_with_bp(0)
-    }
-
-    fn parse_expression_with_bp(&mut self, bp: u8) -> Expression {
-        if cfg!(debug_assertions) {
-            dbg!(&self);
-        }
-        let op_meta = self.operator_table.get_prefix(&self.cur_token);
-        //TODO: refactor this shit
-        let epilogue = match op_meta.clone() {
-            Some(op) => op.epilogue,
-            _ => None,
-        };
-        let mut lhs = match op_meta {
-            Some(op) => {
-                let op_repr = self.cur_token.to_string();
-                self.next_token();
-                let expr = self.parse_expression_with_bp(op.rbp);
-                Expression::Prefix {
-                    operator: op_repr,
-                    right: Box::new(expr),
-                }
-            }
-            None => match self.cur_token {
-                Token::Integer(_) => self.parse_integer_literal(),
-                Token::Symbol(_) => self.parse_identifier(),
-                Token::StrLit(_) => self.parse_string_literal(),
-                _ => panic!("unexpected token: {:?}", self.cur_token),
-            },
-        };
-        if cfg!(debug_assertions) {
-            dbg!(&lhs);
-            dbg!(&self.cur_token);
-        }
-        // parse and combine following expressions
-        while let Some(op) = self.operator_table.get_infix(&self.cur_token) {
-            if op.lbp <= bp {
-                break;
-            }
-            let op_repr = self.cur_token.to_string();
-            self.next_token();
-            lhs = Expression::Infix {
-                left: Box::new(lhs),
-                operator: op_repr,
-                right: Box::new(self.parse_expression_with_bp(op.rbp)),
-            };
-        }
-
-        // if the current token is an epilogue, consume it
-        if let Some(e) = epilogue {
-            self.consume(e);
-        }
-        lhs
     }
 
     fn parse_let_statement(&mut self) -> Statement {
@@ -144,6 +88,105 @@ impl<L: LexerLike> Parser<L> {
         let expr = self.parse_expression();
         self.consume(Token::Semicolon);
         Statement::ExpressionStmt(expr)
+    }
+
+    fn parse_expression(&mut self) -> Expression {
+        self.parse_expression_with_bp(0)
+    }
+
+    fn parse_expression_with_bp(&mut self, bp: u8) -> Expression {
+        if cfg!(debug_assertions) {
+            dbg!(&self);
+        }
+        let op_meta = self.operator_table.get_prefix(&self.cur_token);
+        //TODO: refactor this shit
+        let epilogue = match op_meta.clone() {
+            Some(op) => op.epilogue,
+            _ => None,
+        };
+        let mut lhs = match op_meta {
+            Some(op) => {
+                let op_repr = self.cur_token.to_string();
+                self.next_token();
+                let expr = self.parse_expression_with_bp(op.rbp);
+                if let Some(epilogue) = epilogue {
+                    self.consume(epilogue);
+                }
+                if op_repr == "(" {
+                    expr
+                } else {
+                    Expression::Unary {
+                        operator: op_repr,
+                        right: Box::new(expr),
+                    }
+                }
+            }
+            None => match self.cur_token {
+                Token::Integer(_) => self.parse_integer_literal(),
+                Token::Symbol(_) => self.parse_identifier(),
+                Token::StrLit(_) => self.parse_string_literal(),
+                Token::If => self.parse_if_expression(),
+                _ => panic!("unexpected token: {:?}", self.cur_token),
+            },
+        };
+        if cfg!(debug_assertions) {
+            dbg!(&lhs);
+            dbg!(&self.cur_token);
+        }
+        // parse and combine following expressions
+        while let Some(op) = self.operator_table.get_infix(&self.cur_token) {
+            if op.lbp <= bp {
+                break;
+            }
+            let op_repr = self.cur_token.to_string();
+            self.next_token();
+            lhs = Expression::Binary {
+                left: Box::new(lhs),
+                operator: op_repr,
+                right: Box::new(self.parse_expression_with_bp(op.rbp)),
+            };
+        }
+
+        // if the current token is a postfix operator, consume it
+        if let Some(op) = self.operator_table.get_postfix(&self.cur_token) {
+            if op.lbp <= bp {
+                let op_repr = self.cur_token.to_string();
+                self.next_token();
+                lhs = Expression::Unary {
+                    operator: op_repr,
+                    right: Box::new(lhs),
+                };
+            }
+        }
+        lhs
+    }
+
+    fn parse_if_expression(&mut self) -> Expression {
+        self.consume(Token::If);
+        let condition = self.parse_expression();
+        let consequence = self.parse_block_expression();
+        let alternative = if self.cur_token == Token::Else {
+            self.next_token();
+            Some(self.parse_block_expression())
+        } else {
+            None
+        };
+        Expression::If {
+            condition: Box::new(condition),
+            consequence,
+            alternative,
+        }
+    }
+
+    fn parse_block_expression(&mut self) -> Vec<Statement> {
+        self.consume(Token::LBrace);
+        let mut statements = vec![];
+        while self.cur_token != Token::RBrace && self.cur_token != Token::EOF {
+            let stmt = self.parse_statement();
+            statements.push(stmt);
+        }
+        self.consume(Token::RBrace);
+        statements
     }
 
     fn parse_identifier(&mut self) -> Expression {
@@ -176,7 +219,6 @@ impl<L: LexerLike> Parser<L> {
         expr
     }
 }
-
 impl LexerLike for crate::lexer::Lexer<'_> {
     fn next_token(&mut self) -> Token {
         self.next_token()
@@ -254,10 +296,10 @@ mod tests {
 
         // With proper operator precedence, "5 + 3 * 10" should be parsed as "5 + (3 * 10)"
         // because "*" has higher precedence than "+"
-        let expected_expr = Expression::Infix {
+        let expected_expr = Expression::Binary {
             left: Box::new(Expression::Literal(Literal::Int(5))),
             operator: "+".to_string(),
-            right: Box::new(Expression::Infix {
+            right: Box::new(Expression::Binary {
                 left: Box::new(Expression::Literal(Literal::Int(3))),
                 operator: "*".to_string(),
                 right: Box::new(Expression::Literal(Literal::Int(10))),
@@ -276,6 +318,148 @@ mod tests {
                 }
             }
             _ => panic!("Expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn test_expression_with_paren() {
+        let input = "(5 + 3) * 10;";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+
+        let program = parser.parse_program();
+
+        // With proper operator precedence, "(5 + 3) * 10" should be parsed as "((5 + 3) * 10)"
+        // because "*" has higher precedence than "+"
+        let expected_expr = Expression::Binary {
+            left: Box::new(Expression::Binary {
+                left: Box::new(Expression::Literal(Literal::Int(5))),
+                operator: "+".to_string(),
+                right: Box::new(Expression::Literal(Literal::Int(3))),
+            }),
+            operator: "*".to_string(),
+            right: Box::new(Expression::Literal(Literal::Int(10))),
+        };
+
+        match &program.statements[0] {
+            Statement::ExpressionStmt(expr) => {
+                let expected_debug = format!("{:#?}", expected_expr);
+                let actual_debug = format!("{:#?}", expr);
+
+                if expected_debug != actual_debug {
+                    println!("Expected AST:\n{}", expected_debug);
+                    println!("Actual AST:\n{}", actual_debug);
+                    panic!("AST does not match expected structure");
+                }
+            }
+            _ => panic!("Expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "if (x < y) { return x; } else { return y; };";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        assert_eq!(program.statements.len(), 1);
+        match &program.statements[0] {
+            Statement::ExpressionStmt(expr) => match expr {
+                Expression::If {
+                    condition,
+                    consequence,
+                    alternative,
+                } => {
+                    assert_eq!(
+                        **condition,
+                        Expression::Binary {
+                            left: Box::new(Expression::Ident(Ident {
+                                repr: "x".to_string()
+                            })),
+                            operator: "<".to_string(),
+                            right: Box::new(Expression::Ident(Ident {
+                                repr: "y".to_string()
+                            })),
+                        }
+                    );
+                    assert_eq!(consequence.len(), 1);
+                    match &consequence[0] {
+                        Statement::ReturnStmt(expr) => match expr {
+                            Expression::Ident(Ident { repr }) => assert_eq!(repr, "x"),
+                            _ => panic!("Expected return statement with identifier"),
+                        },
+                        _ => panic!("Expected return statement"),
+                    }
+                    assert_eq!(alternative.as_ref().unwrap().len(), 1);
+                    match &alternative.as_ref().unwrap()[0] {
+                        Statement::ReturnStmt(expr) => match expr {
+                            Expression::Ident(Ident { repr }) => assert_eq!(repr, "y"),
+                            _ => panic!("Expected return statement with identifier"),
+                        },
+                        _ => panic!("Expected return statement"),
+                    }
+                }
+                _ => panic!("Expected if expression"),
+            },
+            _ => panic!("Expected expression statement"),
+        }
+    }
+
+    #[test]
+    fn test_complex_expression() {
+        let input = "let result = (5 + 3 * (10 - 2)) / (4 - 2) - -7;";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+
+        // プログラムは1つのlet文を含むはず
+        assert_eq!(program.statements.len(), 1);
+
+        // let文のASTが期待通りになっているか検証
+        match &program.statements[0] {
+            Statement::LetStmt { name, value } => {
+                assert_eq!(name, "result");
+
+                // 期待するASTを構築
+                let expected_expr = Expression::Binary {
+                    left: Box::new(Expression::Binary {
+                        left: Box::new(Expression::Binary {
+                            left: Box::new(Expression::Literal(Literal::Int(5))),
+                            operator: "+".to_string(),
+                            right: Box::new(Expression::Binary {
+                                left: Box::new(Expression::Literal(Literal::Int(3))),
+                                operator: "*".to_string(),
+                                right: Box::new(Expression::Binary {
+                                    left: Box::new(Expression::Literal(Literal::Int(10))),
+                                    operator: "-".to_string(),
+                                    right: Box::new(Expression::Literal(Literal::Int(2))),
+                                }),
+                            }),
+                        }),
+                        operator: "/".to_string(),
+                        right: Box::new(Expression::Binary {
+                            left: Box::new(Expression::Literal(Literal::Int(4))),
+                            operator: "-".to_string(),
+                            right: Box::new(Expression::Literal(Literal::Int(2))),
+                        }),
+                    }),
+                    operator: "-".to_string(),
+                    right: Box::new(Expression::Unary {
+                        operator: "-".to_string(),
+                        right: Box::new(Expression::Literal(Literal::Int(7))),
+                    }),
+                };
+
+                let expected_debug = format!("{:#?}", expected_expr);
+                let actual_debug = format!("{:#?}", value);
+
+                if expected_debug != actual_debug {
+                    println!("Expected AST:\n{}", expected_debug);
+                    println!("Actual AST:\n{}", actual_debug);
+                    panic!("AST does not match expected structure");
+                }
+            }
+            _ => panic!("Expected a let statement"),
         }
     }
 }
