@@ -192,7 +192,7 @@ impl<'a> Lexer<'a> {
             '\0' => Token::EOF,
             ch if ch.is_alphabetic() || ch == '_' => {
                 let ident = self.read_identifier();
-                return Token::lookup_ident(&ident);
+                return Token::lookup_keyword(&ident);
             }
             ch if ch.is_digit(10) => {
                 return self.read_number();

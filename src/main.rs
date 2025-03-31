@@ -1,5 +1,4 @@
 mod ast;
-mod codegen;
 mod evaluator;
 mod lexer;
 mod parser;

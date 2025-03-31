@@ -3,6 +3,7 @@ use crate::ast::{Expression, Ident, Literal, Statement};
 use crate::lexer::Lexer;
 use crate::prattutil::{OperatorLookup, OperatorMetadata, OperatorTable};
 use crate::token::Token;
+use std::collections::btree_map::Keys;
 use std::fmt::Debug;
 
 pub trait LexerLike: Debug + Clone {
@@ -59,6 +60,7 @@ impl<L: LexerLike> Parser<L> {
         match self.cur_token {
             Token::Let => self.parse_let_statement(),
             Token::Return => self.parse_return_statement(),
+            Token::Function => self.parse_function_declaration(),
             _ => self.parse_expression_statement(),
         }
     }
@@ -90,7 +92,39 @@ impl<L: LexerLike> Parser<L> {
         Statement::ExpressionStmt(expr)
     }
 
+    fn parse_function_declaration(&mut self) -> Statement {
+        self.consume(Token::Function);
+        let name = match self.cur_token {
+            Token::Symbol(ref s) => s.clone(),
+            _ => panic!("expected identifier, got: {:?}", self.cur_token),
+        };
+        self.next_token();
+        self.consume(Token::LParen);
+        let mut parameters = vec![];
+        while self.cur_token != Token::RParen {
+            match self.cur_token {
+                Token::Symbol(ref s) => parameters.push(s.clone()),
+                _ => panic!("expected identifier, got: {:?}", self.cur_token),
+            }
+            self.next_token();
+            if self.cur_token == Token::Comma {
+                self.next_token();
+            }
+        }
+        self.consume(Token::RParen);
+        let body = self.parse_code_block();
+        Statement::FunctionDecl {
+            name,
+            parameters,
+            body,
+        }
+    }
+
     fn parse_expression(&mut self) -> Expression {
+        // block expression if the current token is '{'
+        if self.cur_token == Token::LBrace {
+            return self.parse_code_block();
+        }
         self.parse_expression_with_bp(0)
     }
 
@@ -164,10 +198,10 @@ impl<L: LexerLike> Parser<L> {
     fn parse_if_expression(&mut self) -> Expression {
         self.consume(Token::If);
         let condition = self.parse_expression();
-        let consequence = self.parse_block_expression();
+        let consequence = Box::new(self.parse_code_block());
         let alternative = if self.cur_token == Token::Else {
             self.next_token();
-            Some(self.parse_block_expression())
+            Some(Box::new(self.parse_code_block()))
         } else {
             None
         };
@@ -178,15 +212,20 @@ impl<L: LexerLike> Parser<L> {
         }
     }
 
-    fn parse_block_expression(&mut self) -> Vec<Statement> {
+    fn parse_code_block(&mut self) -> Expression {
         self.consume(Token::LBrace);
+        //dbg
+        if cfg!(debug_assertions) {
+            dbg!(&self.cur_token);
+        }
+        //dbg
         let mut statements = vec![];
         while self.cur_token != Token::RBrace && self.cur_token != Token::EOF {
             let stmt = self.parse_statement();
             statements.push(stmt);
         }
         self.consume(Token::RBrace);
-        statements
+        Expression::Block(statements)
     }
 
     fn parse_identifier(&mut self) -> Expression {
@@ -363,45 +402,173 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
         assert_eq!(program.statements.len(), 1);
-        match &program.statements[0] {
-            Statement::ExpressionStmt(expr) => match expr {
-                Expression::If {
-                    condition,
-                    consequence,
-                    alternative,
-                } => {
-                    assert_eq!(
-                        **condition,
-                        Expression::Binary {
-                            left: Box::new(Expression::Ident(Ident {
-                                repr: "x".to_string()
-                            })),
-                            operator: "<".to_string(),
-                            right: Box::new(Expression::Ident(Ident {
-                                repr: "y".to_string()
-                            })),
-                        }
-                    );
-                    assert_eq!(consequence.len(), 1);
-                    match &consequence[0] {
-                        Statement::ReturnStmt(expr) => match expr {
-                            Expression::Ident(Ident { repr }) => assert_eq!(repr, "x"),
-                            _ => panic!("Expected return statement with identifier"),
-                        },
-                        _ => panic!("Expected return statement"),
-                    }
-                    assert_eq!(alternative.as_ref().unwrap().len(), 1);
-                    match &alternative.as_ref().unwrap()[0] {
-                        Statement::ReturnStmt(expr) => match expr {
-                            Expression::Ident(Ident { repr }) => assert_eq!(repr, "y"),
-                            _ => panic!("Expected return statement with identifier"),
-                        },
-                        _ => panic!("Expected return statement"),
-                    }
+
+        if let Statement::ExpressionStmt(Expression::If {
+            condition,
+            consequence,
+            alternative,
+        }) = &program.statements[0]
+        {
+            // Test condition
+            assert_eq!(
+                **condition,
+                Expression::Binary {
+                    left: Box::new(Expression::Ident(Ident {
+                        repr: "x".to_string()
+                    })),
+                    operator: "<".to_string(),
+                    right: Box::new(Expression::Ident(Ident {
+                        repr: "y".to_string()
+                    })),
                 }
-                _ => panic!("Expected if expression"),
-            },
-            _ => panic!("Expected expression statement"),
+            );
+
+            // Test consequence
+            if let Expression::Block(statements) = &**consequence {
+                assert_eq!(statements.len(), 1);
+                if let Statement::ReturnStmt(Expression::Ident(Ident { repr })) = &statements[0] {
+                    assert_eq!(repr, "x");
+                } else {
+                    panic!("Expected return statement with identifier 'x'");
+                }
+            } else {
+                panic!("Expected block expression for consequence");
+            }
+
+            // Test alternative
+            if let Some(alt) = alternative {
+                if let Expression::Block(statements) = &**alt {
+                    assert_eq!(statements.len(), 1);
+                    if let Statement::ReturnStmt(Expression::Ident(Ident { repr })) = &statements[0]
+                    {
+                        assert_eq!(repr, "y");
+                    } else {
+                        panic!("Expected return statement with identifier 'y'");
+                    }
+                } else {
+                    panic!("Expected block expression for alternative");
+                }
+            } else {
+                panic!("Expected Some alternative");
+            }
+        } else {
+            panic!("Expected if expression");
+        }
+    }
+
+    #[test]
+    fn test_function_declaration() {
+        let input = "fn add(x, y) { return x + y; }";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        assert_eq!(program.statements.len(), 1);
+
+        if let Statement::FunctionDecl {
+            name,
+            parameters,
+            body,
+        } = &program.statements[0]
+        {
+            assert_eq!(name, "add");
+            assert_eq!(parameters.len(), 2);
+            assert_eq!(parameters[0], "x");
+            assert_eq!(parameters[1], "y");
+
+            // Check the function body
+            if let Expression::Block(statements) = body {
+                assert_eq!(statements.len(), 1);
+                if let Statement::ReturnStmt(expr) = &statements[0] {
+                    if let Expression::Binary {
+                        left,
+                        operator,
+                        right,
+                    } = expr
+                    {
+                        assert_eq!(operator, "+");
+                        if let Expression::Ident(Ident { repr }) = left.as_ref() {
+                            assert_eq!(repr, "x");
+                        } else {
+                            panic!("Expected identifier 'x'");
+                        }
+                        if let Expression::Ident(Ident { repr }) = right.as_ref() {
+                            assert_eq!(repr, "y");
+                        } else {
+                            panic!("Expected identifier 'y'");
+                        }
+                    } else {
+                        panic!("Expected binary expression x + y");
+                    }
+                } else {
+                    panic!("Expected return statement");
+                }
+            } else {
+                panic!("Expected block expression");
+            }
+        } else {
+            panic!("Expected function declaration");
+        }
+    }
+
+    #[test]
+    fn test_code_block() {
+        let input = "{ let x = 5; let y = 10; return x + y; };";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        assert_eq!(program.statements.len(), 1);
+
+        match &program.statements[0] {
+            Statement::ExpressionStmt(Expression::Block(statements)) => {
+                assert_eq!(statements.len(), 3);
+                if let Statement::LetStmt { name, value } = &statements[0] {
+                    assert_eq!(name, "x");
+                    if let Expression::Literal(Literal::Int(val)) = value {
+                        assert_eq!(*val, 5);
+                    } else {
+                        panic!("Expected integer literal");
+                    }
+                } else {
+                    panic!("Expected let statement");
+                }
+
+                if let Statement::LetStmt { name, value } = &statements[1] {
+                    assert_eq!(name, "y");
+                    if let Expression::Literal(Literal::Int(val)) = value {
+                        assert_eq!(*val, 10);
+                    } else {
+                        panic!("Expected integer literal");
+                    }
+                } else {
+                    panic!("Expected let statement");
+                }
+
+                if let Statement::ReturnStmt(expr) = &statements[2] {
+                    if let Expression::Binary {
+                        left,
+                        operator,
+                        right,
+                    } = expr
+                    {
+                        assert_eq!(operator, "+");
+                        if let Expression::Ident(Ident { repr }) = left.as_ref() {
+                            assert_eq!(repr, "x");
+                        } else {
+                            panic!("Expected identifier 'x'");
+                        }
+                        if let Expression::Ident(Ident { repr }) = right.as_ref() {
+                            assert_eq!(repr, "y");
+                        } else {
+                            panic!("Expected identifier 'y'");
+                        }
+                    } else {
+                        panic!("Expected binary expression x + y");
+                    }
+                } else {
+                    panic!("Expected return statement");
+                }
+            }
+            _ => panic!("Expected block expression"),
         }
     }
 

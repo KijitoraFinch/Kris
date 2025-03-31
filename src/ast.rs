@@ -14,7 +14,7 @@ pub enum Statement {
     FunctionDecl {
         name: String,
         parameters: Vec<String>,
-        body: Vec<Statement>,
+        body: Expression,
     },
 }
 
@@ -33,17 +33,18 @@ pub enum Expression {
     },
     If {
         condition: Box<Expression>,
-        consequence: Vec<Statement>,
-        alternative: Option<Vec<Statement>>,
+        consequence: Box<Expression>,
+        alternative: Option<Box<Expression>>,
     },
     Function {
         parameters: Vec<String>,
-        body: Vec<Statement>,
+        body: Box<Expression>,
     },
     Call {
         function: Box<Expression>,
         arguments: Vec<Expression>,
     },
+    Block(Vec<Statement>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

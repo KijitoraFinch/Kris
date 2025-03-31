@@ -48,7 +48,7 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn lookup_ident(ident: &str) -> Token {
+    pub fn lookup_keyword(ident: &str) -> Token {
         match ident {
             "fn" => Token::Function,
             "let" => Token::Let,
