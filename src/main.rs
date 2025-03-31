@@ -1,10 +1,10 @@
 mod ast;
+mod error_utils;
 mod evaluator;
 mod lexer;
 mod parser;
 mod prattutil;
 mod token;
-
 fn main() {
     // arg
     let args: Vec<String> = std::env::args().collect();
