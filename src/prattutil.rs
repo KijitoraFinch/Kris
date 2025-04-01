@@ -102,19 +102,17 @@ impl OperatorLookup for OperatorTable {
                 rbp: 2,
                 epilogue: None,
             }),
+            Token::LBracket => Some(OperatorMetadata {
+                lbp: 0,
+                rbp: 0,
+                epilogue: Some(Token::RBrace),
+            }),
             _ => None,
         }
     }
 
     fn get_postfix(&self, tok: &Token) -> Option<OperatorMetadata> {
-        match tok {
-            Token::LParen => Some(OperatorMetadata {
-                lbp: 0,
-                rbp: 9,
-                epilogue: Some(Token::RParen),
-            }),
-            _ => None,
-        }
+        None
     }
 
     fn register(&mut self, tok: Token, op: OperatorMetadata) {

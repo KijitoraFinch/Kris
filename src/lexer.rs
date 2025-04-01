@@ -189,6 +189,18 @@ impl<'a> Lexer<'a> {
                     Token::Colon
                 }
             },
+            '@' => {
+                self.read_char();
+                Token::At
+            }
+            '"' => {
+                self.read_char();
+                Token::DoubleQuote
+            }
+            '|' => {
+                self.read_char();
+                Token::Bar
+            }
             '\0' => Token::EOF,
             ch if ch.is_alphabetic() || ch == '_' => {
                 let ident = self.read_identifier();
@@ -230,7 +242,7 @@ mod tests {
             let block_value = {
                 x + y
             };
-            let anon_func = (x, y) => x + y;
+            let anon_func = @(x, y) => x + y;
         "#;
 
         let expected = vec![
@@ -322,6 +334,7 @@ mod tests {
             Token::Let,
             Token::Symbol("anon_func".to_string()),
             Token::Assign,
+            Token::At,
             Token::LParen,
             Token::Symbol("x".to_string()),
             Token::Comma,

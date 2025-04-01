@@ -36,6 +36,8 @@ pub enum Token {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
 
     // Keywords
     Function,
@@ -45,6 +47,9 @@ pub enum Token {
     If,
     Else,
     Return,
+
+    At,
+    Bar,
 }
 
 impl Token {
@@ -86,7 +91,7 @@ impl fmt::Display for Token {
             Token::Eq => write!(f, "=="),
             Token::NotEq => write!(f, "!="),
             Token::Pipe => write!(f, "|"),
-            Token::Arrow => write!(f, "->"),
+            Token::Arrow => write!(f, "=>"),
 
             // Delimiters
             Token::Comma => write!(f, ","),
@@ -97,6 +102,8 @@ impl fmt::Display for Token {
             Token::RParen => write!(f, ")"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
+            Token::LBracket => write!(f, "["),
+            Token::RBracket => write!(f, "]"),
 
             // Keywords
             Token::Function => write!(f, "fn"),
@@ -106,6 +113,10 @@ impl fmt::Display for Token {
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
             Token::Return => write!(f, "return"),
+
+            // その他
+            Token::At => write!(f, "@"),
+            Token::Bar => write!(f, "|"),
         }
     }
 }

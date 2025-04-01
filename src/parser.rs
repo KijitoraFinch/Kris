@@ -163,10 +163,7 @@ impl<L: LexerLike> Parser<L> {
                 _ => panic!("unexpected token: {:?}", self.cur_token),
             },
         };
-        if cfg!(debug_assertions) {
-            dbg!(&lhs);
-            dbg!(&self.cur_token);
-        }
+
         // parse and combine following expressions
         while let Some(op) = self.operator_table.get_infix(&self.cur_token) {
             if op.lbp <= bp {
@@ -179,6 +176,11 @@ impl<L: LexerLike> Parser<L> {
                 operator: op_repr,
                 right: Box::new(self.parse_expression_with_bp(op.rbp)),
             };
+
+            // consume epilogue if it exists
+            if let Some(epilogue) = op.epilogue {
+                self.consume(epilogue);
+            }
         }
 
         // if the current token is a postfix operator, consume it
