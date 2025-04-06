@@ -177,10 +177,14 @@ impl<L: LexerLike> Parser<L> {
                 right: Box::new(self.parse_expression_with_bp(op.rbp)),
             };
 
+            if cfg!(debug_assertions) {
+                dbg!(op.clone());
+            };
+
             // consume epilogue if it exists
             if let Some(epilogue) = op.epilogue {
                 self.consume(epilogue);
-            }
+            };
         }
 
         // if the current token is a postfix operator, consume it
@@ -629,6 +633,42 @@ mod tests {
                 }
             }
             _ => panic!("Expected a let statement"),
+        }
+    }
+
+    #[test]
+    fn test_collection_access() {
+        let input = "let first = collection[0];";
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        assert_eq!(program.statements.len(), 1);
+
+        match &program.statements[0] {
+            Statement::LetStmt { name, value } => {
+                assert_eq!(name, "first");
+                match value {
+                    Expression::Binary {
+                        left,
+                        operator,
+                        right,
+                    } => {
+                        assert_eq!(operator, "[");
+                        if let Expression::Ident(Ident { repr }) = left.as_ref() {
+                            assert_eq!(repr, "collection");
+                        } else {
+                            panic!("Expected identifier 'collection'");
+                        }
+                        if let Expression::Literal(Literal::Int(val)) = right.as_ref() {
+                            assert_eq!(*val, 0);
+                        } else {
+                            panic!("Expected integer literal");
+                        }
+                    }
+                    _ => panic!("Expected binary expression"),
+                }
+            }
+            _ => panic!("Expected let statement"),
         }
     }
 }

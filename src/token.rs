@@ -120,3 +120,5 @@ impl fmt::Display for Token {
         }
     }
 }
+
+pub trait as_ {}

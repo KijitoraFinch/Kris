@@ -170,6 +170,14 @@ impl<'a> Lexer<'a> {
                 self.read_char();
                 Token::RBrace
             }
+            '[' => {
+                self.read_char();
+                Token::LBracket
+            }
+            ']' => {
+                self.read_char();
+                Token::RBracket
+            }
             ',' => {
                 self.read_char();
                 Token::Comma
