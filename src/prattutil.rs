@@ -103,8 +103,8 @@ impl OperatorLookup for OperatorTable {
                 epilogue: None,
             }),
             Token::LBracket => Some(OperatorMetadata {
-                lbp: 0,
-                rbp: 0,
+                lbp: 1,
+                rbp: 1,
                 epilogue: Some(Token::RBracket),
             }),
             _ => None,
